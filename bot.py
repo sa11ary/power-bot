@@ -2,14 +2,17 @@ import asyncio
 import json
 import logging
 import os
-from bs4 import BeautifulSoup
-import requests
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiohttp import web
+from bs4 import BeautifulSoup
+import requests
 
-BOT_TOKEN = os.getenv("8649041001:AAGuNYq4SfF_JCJWjWlEHpJULjq6NUkwQ-Y")
-CHAT_ID = os.getenv("6504410659")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+PORT = int(os.getenv("PORT", 8000))
+
 TARGET_QUEUE = "6.2"
 URL = "https://off.energy.mk.ua/"
 STATE_FILE = "queue_6_2_state.json"
@@ -19,6 +22,21 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
+# --- Веб-сервер для поддержки активности Render ---
+async def handle_ping(request):
+    return web.Response(text="Bot is running 24/7", status=200)
+
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+
+
+# --- Парсинг и логика бота ---
 def get_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="📅 Посмотреть график")]],
@@ -154,6 +172,7 @@ async def auto_check_loop():
 
 
 async def main():
+    await start_web_server()
     asyncio.create_task(auto_check_loop())
     await dp.start_polling(bot)
 
