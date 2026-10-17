@@ -5,12 +5,12 @@ import os
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from bs4 import BeautifulSoup
+import aiohttp
 from aiohttp import web
+from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-import requests
 
 BOT_TOKEN = os.getenv("8649041001:AAGuNYq4SfF_JCJWjWlEHpJULjq6NUkwQ-Y")
 CHAT_ID = os.getenv("6504410659")
@@ -21,7 +21,11 @@ URL = "https://off.energy.mk.ua/"
 STATE_FILE = "queue_6_2_state.json"
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token=BOT_TOKEN)
+
+if not BOT_TOKEN:
+    logging.critical("ОШИБКА: Переменная BOT_TOKEN не найдена в Environment Variables!")
+
+bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
 dp = Dispatcher()
 
 
@@ -36,6 +40,7 @@ async def start_web_server():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
+    logging.info(f"Веб-сервер запущен на порту {PORT}")
 
 
 # --- Умный статус по времени ---
@@ -43,10 +48,14 @@ def get_current_status(schedule: list[str]) -> str:
     if not schedule:
         return "🟢 Свет есть. Отключений не запланировано."
 
-    now = datetime.now(ZoneInfo("Europe/Kyiv"))
-    current_time = now.strftime("%H:%M")
+    try:
+        now = datetime.now(ZoneInfo("Europe/Kyiv"))
+    except Exception:
+        now = datetime.utcnow()
 
+    current_time = now.strftime("%H:%M")
     upcoming = []
+
     for period in schedule:
         parts = period.split("-")
         if len(parts) == 2:
@@ -65,25 +74,27 @@ def get_current_status(schedule: list[str]) -> str:
     return "🟢 **Сейчас свет есть. Запланированные отключения на сегодня завершены.**\n\n🕒 Прошедший график:\n" + "\n".join(schedule)
 
 
-# --- Парсинг и логика бота ---
+# --- Асинхронный парсинг сайта ---
 def get_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="📅 Посмотреть график")]],
         resize_keyboard=True,
     )
 
-def get_schedule() -> list[str]:
+async def get_schedule() -> list[str]:
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    response = requests.get(URL, headers=headers, timeout=15)
-    response.raise_for_status()
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(URL, headers=headers) as response:
+            response.raise_for_status()
+            html = await response.text()
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     schedule = []
 
     for element in soup.find_all(["tr", "div", "li"]):
         text = element.get_text(" ", strip=True)
         if TARGET_QUEUE in text:
-            # Четкий поиск времени формата 02:00 - 04:00
             times = re.findall(r'\d{2}:\d{2}\s*[-–]\s*\d{2}:\d{2}', text)
             for t in times:
                 clean_t = t.replace("–", "-").replace(" ", "")
@@ -135,7 +146,7 @@ async def cmd_start(message: types.Message):
 @dp.message(F.text == "📅 Посмотреть график")
 async def show_schedule(message: types.Message):
     try:
-        current = get_schedule()
+        current = await get_schedule()
         status_msg = get_current_status(current)
         msg = f"⚡ **Очередь {TARGET_QUEUE}**\n\n{status_msg}"
     except Exception as e:
@@ -146,11 +157,11 @@ async def show_schedule(message: types.Message):
 async def auto_check_loop():
     while True:
         try:
-            current = get_schedule()
+            current = await get_schedule()
             saved = load_saved_schedule()
 
             if current != saved:
-                if saved:
+                if saved and CHAT_ID:
                     diff = compare_schedules(saved, current)
                     status_msg = get_current_status(current)
                     
@@ -170,11 +181,15 @@ async def auto_check_loop():
                 logging.info(f"График обновлен: {current}")
 
         except Exception as e:
-            logging.error(f"Ошибка проверки: {e}")
+            logging.error(f"Ошибка автоматической проверки: {e}")
 
         await asyncio.sleep(300)
 
 async def main():
+    if not bot:
+        logging.critical("Бот не может быть запущен без BOT_TOKEN.")
+        return
+
     await start_web_server()
     asyncio.create_task(auto_check_loop())
     await bot.delete_webhook(drop_pending_updates=True)
