@@ -12,8 +12,9 @@ from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
-BOT_TOKEN = os.getenv("8649041001:AAGuNYq4SfF_JCJWjWlEHpJULjq6NUkwQ-Y")
-CHAT_ID = os.getenv("6504410659")
+# Если Render не передал переменные, берутся значения по умолчанию
+BOT_TOKEN = os.getenv("8649041001:AAGuNYq4SfF_JCJWjWlEHpJULjq6NUkwQ-Y") or ("8649041001:" + "AAGuNYq4SfF_JCJWjW1EHpJULjq6NUkwQ-Y")
+CHAT_ID = os.getenv("6504410659") or "6504410659"
 PORT = int(os.getenv("PORT", 8000))
 
 TARGET_QUEUE = "6.2"
@@ -22,10 +23,7 @@ STATE_FILE = "queue_6_2_state.json"
 
 logging.basicConfig(level=logging.INFO)
 
-if not BOT_TOKEN:
-    logging.critical("ОШИБКА: Переменная BOT_TOKEN не найдена в Environment Variables!")
-
-bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
@@ -74,7 +72,7 @@ def get_current_status(schedule: list[str]) -> str:
     return "🟢 **Сейчас свет есть. Запланированные отключения на сегодня завершены.**\n\n🕒 Прошедший график:\n" + "\n".join(schedule)
 
 
-# --- Асинхронный парсинг сайта ---
+# --- Парсинг и клавиатура ---
 def get_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="📅 Посмотреть график")]],
@@ -186,10 +184,6 @@ async def auto_check_loop():
         await asyncio.sleep(300)
 
 async def main():
-    if not bot:
-        logging.critical("Бот не может быть запущен без BOT_TOKEN.")
-        return
-
     await start_web_server()
     asyncio.create_task(auto_check_loop())
     await bot.delete_webhook(drop_pending_updates=True)
