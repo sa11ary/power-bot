@@ -2,15 +2,15 @@ import asyncio
 import json
 import logging
 import os
+import requests
+from bs4 import BeautifulSoup
+from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-from aiohttp import web
-from bs4 import BeautifulSoup
-import requests
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+BOT_TOKEN = os.getenv("8649041001:AAGuNYq4SfF_JCJWjWlEHpJULjq6NUkwQ-Y")
+CHAT_ID = os.getenv("6504410659")
 PORT = int(os.getenv("PORT", 8000))
 
 TARGET_QUEUE = "6.2"
@@ -174,6 +174,8 @@ async def auto_check_loop():
 async def main():
     await start_web_server()
     asyncio.create_task(auto_check_loop())
+    # Сброс активных вебхуков перед стартом
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 
