@@ -1,4 +1,3 @@
 aiogram
-aiohttp
+requests
 beautifulsoup4
-tzdata
